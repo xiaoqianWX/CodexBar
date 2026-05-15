@@ -23,21 +23,23 @@ struct OpenCodeGoUsageFetcherErrorTests {
     }
 
     private func makeSession() -> URLSession {
-        let config = URLSessionConfiguration.ephemeral
-        config.protocolClasses = [OpenCodeGoStubURLProtocol.self]
-        return URLSession(configuration: config)
+        OpenCodeGoStubURLProtocol.makeSession()
     }
 
     @Test
     func `extracts api error from detail field`() async throws {
         defer {
-            OpenCodeGoStubURLProtocol.handler = nil
+            OpenCodeGoStubURLProtocol.reset()
         }
 
-        OpenCodeGoStubURLProtocol.handler = { request in
+        OpenCodeGoStubURLProtocol.setHandler { request in
             guard let url = request.url else { throw URLError(.badURL) }
             let body = #"{"detail":"Workspace missing"}"#
-            return Self.makeResponse(url: url, body: body, statusCode: 500, contentType: "application/json")
+            return OpenCodeGoStubURLProtocol.makeResponse(
+                url: url,
+                body: body,
+                statusCode: 500,
+                contentType: "application/json")
         }
 
         do {
@@ -61,11 +63,11 @@ struct OpenCodeGoUsageFetcherErrorTests {
     @Test
     func `workspace get missing ids falls back to post before loading go page`() async throws {
         defer {
-            OpenCodeGoStubURLProtocol.handler = nil
+            OpenCodeGoStubURLProtocol.reset()
         }
 
         var methods: [String] = []
-        OpenCodeGoStubURLProtocol.handler = { request in
+        OpenCodeGoStubURLProtocol.setHandler { request in
             guard let url = request.url else { throw URLError(.badURL) }
             methods.append(request.httpMethod ?? "GET")
 
@@ -73,7 +75,7 @@ struct OpenCodeGoUsageFetcherErrorTests {
             if url.query?.contains(workspaceServerID) == true,
                request.httpMethod?.uppercased() == "GET"
             {
-                return Self.makeResponse(
+                return OpenCodeGoStubURLProtocol.makeResponse(
                     url: url,
                     body: #"{"ok":true}"#,
                     statusCode: 200,
@@ -84,14 +86,14 @@ struct OpenCodeGoUsageFetcherErrorTests {
                request.httpMethod?.uppercased() == "POST",
                request.value(forHTTPHeaderField: "X-Server-Id") == workspaceServerID
             {
-                return Self.makeResponse(
+                return OpenCodeGoStubURLProtocol.makeResponse(
                     url: url,
                     body: #"{"data":[{"id":"wrk_TEST123"}]}"#,
                     statusCode: 200,
                     contentType: "application/json")
             }
 
-            return Self.makeResponse(
+            return OpenCodeGoStubURLProtocol.makeResponse(
                 url: url,
                 body: Self.goUsagePageHTML(
                     workspaceID: "wrk_TEST123",
@@ -116,11 +118,11 @@ struct OpenCodeGoUsageFetcherErrorTests {
     @Test
     func `workspace get public actor error is treated as invalid credentials without post retry`() async throws {
         defer {
-            OpenCodeGoStubURLProtocol.handler = nil
+            OpenCodeGoStubURLProtocol.reset()
         }
 
         var methods: [String] = []
-        OpenCodeGoStubURLProtocol.handler = { request in
+        OpenCodeGoStubURLProtocol.setHandler { request in
             guard let url = request.url else { throw URLError(.badURL) }
             methods.append(request.httpMethod ?? "GET")
             let body = [
@@ -129,7 +131,7 @@ struct OpenCodeGoUsageFetcherErrorTests {
                 #"{stack:"Error: actor of type \"public\" is not associated with an account"}))"#,
                 #"($R["server-fn:test"]))"#,
             ].joined()
-            return Self.makeResponse(
+            return OpenCodeGoStubURLProtocol.makeResponse(
                 url: url,
                 body: body,
                 statusCode: 200,
@@ -157,14 +159,14 @@ struct OpenCodeGoUsageFetcherErrorTests {
     @Test
     func `go page missing usage fields returns parse failed without post retry`() async throws {
         defer {
-            OpenCodeGoStubURLProtocol.handler = nil
+            OpenCodeGoStubURLProtocol.reset()
         }
 
         var methods: [String] = []
-        OpenCodeGoStubURLProtocol.handler = { request in
+        OpenCodeGoStubURLProtocol.setHandler { request in
             guard let url = request.url else { throw URLError(.badURL) }
             methods.append(request.httpMethod ?? "GET")
-            return Self.makeResponse(
+            return OpenCodeGoStubURLProtocol.makeResponse(
                 url: url,
                 body: "<html><title>opencode</title><body>No usage yet</body></html>",
                 statusCode: 200,
@@ -193,14 +195,14 @@ struct OpenCodeGoUsageFetcherErrorTests {
     @Test
     func `normalizes workspace override from URL into go page path`() async throws {
         defer {
-            OpenCodeGoStubURLProtocol.handler = nil
+            OpenCodeGoStubURLProtocol.reset()
         }
 
         var observedPath: String?
-        OpenCodeGoStubURLProtocol.handler = { request in
+        OpenCodeGoStubURLProtocol.setHandler { request in
             guard let url = request.url else { throw URLError(.badURL) }
             observedPath = url.path
-            return Self.makeResponse(
+            return OpenCodeGoStubURLProtocol.makeResponse(
                 url: url,
                 body: Self.goUsagePageHTML(
                     workspaceID: "wrk_URL123",
@@ -223,14 +225,14 @@ struct OpenCodeGoUsageFetcherErrorTests {
     @Test
     func `fetcher sends only auth cookie to opencode host`() async throws {
         defer {
-            OpenCodeGoStubURLProtocol.handler = nil
+            OpenCodeGoStubURLProtocol.reset()
         }
 
         var observedCookie: String?
-        OpenCodeGoStubURLProtocol.handler = { request in
+        OpenCodeGoStubURLProtocol.setHandler { request in
             guard let url = request.url else { throw URLError(.badURL) }
             observedCookie = request.value(forHTTPHeaderField: "Cookie")
-            return Self.makeResponse(
+            return OpenCodeGoStubURLProtocol.makeResponse(
                 url: url,
                 body: Self.goUsagePageHTML(
                     workspaceID: "wrk_TEST123",
@@ -282,47 +284,10 @@ struct OpenCodeGoUsageFetcherErrorTests {
         </html>
         """
     }
-
-    private static func makeResponse(
-        url: URL,
-        body: String,
-        statusCode: Int,
-        contentType: String) -> (HTTPURLResponse, Data)
-    {
-        let response = HTTPURLResponse(
-            url: url,
-            statusCode: statusCode,
-            httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": contentType])!
-        return (response, Data(body.utf8))
-    }
 }
 
-final class OpenCodeGoStubURLProtocol: URLProtocol {
-    nonisolated(unsafe) static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
-
+final class OpenCodeGoStubURLProtocol: TestURLProtocol {
     override static func canInit(with request: URLRequest) -> Bool {
         request.url?.host == "opencode.ai"
     }
-
-    override static func canonicalRequest(for request: URLRequest) -> URLRequest {
-        request
-    }
-
-    override func startLoading() {
-        guard let handler = Self.handler else {
-            self.client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
-            return
-        }
-        do {
-            let (response, data) = try handler(self.request)
-            self.client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            self.client?.urlProtocol(self, didLoad: data)
-            self.client?.urlProtocolDidFinishLoading(self)
-        } catch {
-            self.client?.urlProtocol(self, didFailWithError: error)
-        }
-    }
-
-    override func stopLoading() {}
 }
