@@ -22,13 +22,11 @@ struct StatusMenuTests {
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
         let configStore = testConfigStore(suiteName: suite)
-        let settings = SettingsStore(
+        return SettingsStore(
             userDefaults: defaults,
             configStore: configStore,
             zaiTokenStore: NoopZaiTokenStore(),
             syntheticTokenStore: NoopSyntheticTokenStore())
-        settings.providerDetectionCompleted = true
-        return settings
     }
 
     func makeCodexStore(settings: SettingsStore, dashboardAuthorized: Bool) -> UsageStore {
@@ -599,10 +597,9 @@ struct StatusMenuTests {
             statusBar: self.makeStatusBarForTesting())
 
         let menu = controller.makeMenu()
-        controller.menuWillOpen(menu)
-        controller.openMenus[ObjectIdentifier(menu)] = menu
         StatusItemController.setMenuRefreshEnabledForTesting(true)
         defer { StatusItemController.resetMenuRefreshEnabledForTesting() }
+        controller.menuWillOpen(menu)
 
         let initialSwitcher = menu.items.first?.view as? ProviderSwitcherView
         #expect(initialSwitcher != nil)

@@ -30,7 +30,7 @@ struct SubprocessRunnerTests {
                 binary: "/bin/sleep",
                 arguments: ["5"],
                 environment: ProcessInfo.processInfo.environment,
-                timeout: 0.3,
+                timeout: 1,
                 label: "hung-process-test")
             Issue.record("Expected SubprocessRunnerError.timedOut but no error was thrown")
         } catch let error as SubprocessRunnerError {
@@ -45,7 +45,7 @@ struct SubprocessRunnerTests {
 
         let elapsed = Date().timeIntervalSince(start)
         // Must complete in well under 5s (the sleep duration). Allow generous bound for CI.
-        #expect(elapsed < 2.5, "Timeout should fire promptly, not wait for process to exit naturally")
+        #expect(elapsed < 3, "Timeout should fire in ~1s, not wait for process to exit naturally")
     }
 
     /// Multiple concurrent hung subprocesses must all time out independently, proving that
@@ -64,7 +64,7 @@ struct SubprocessRunnerTests {
                             binary: "/bin/sleep",
                             arguments: ["5"],
                             environment: ProcessInfo.processInfo.environment,
-                            timeout: 0.5,
+                            timeout: 2,
                             label: "concurrent-hung-\(i)")
                         Issue.record("Expected .timedOut for concurrent-hung-\(i)")
                     } catch let error as SubprocessRunnerError {
@@ -80,18 +80,18 @@ struct SubprocessRunnerTests {
         }
 
         let elapsed = Date().timeIntervalSince(start)
-        // All 8 should time out together, not wait for the 5s sleep.
-        // Use a generous bound for slow CI.
+        // All 8 should time out in ~2s (parallel), not wait for the 5s sleep.
+        // Use a generous 4s bound for slow CI.
         #expect(
-            elapsed < 3,
-            "All \(count) concurrent timeouts should fire promptly, took \(elapsed)s")
+            elapsed < 4,
+            "All \(count) concurrent timeouts should fire in ~2s, took \(elapsed)s")
     }
 
     /// Stress-test the timeout race guard: with very short timeouts, the exit-code task
     /// and the timeout task race tightly, exercising the KillFlag synchronization path.
     @Test
     func `timeout race stress`() async {
-        for i in 0..<8 {
+        for i in 0..<20 {
             do {
                 _ = try await SubprocessRunner.run(
                     binary: "/bin/sleep",

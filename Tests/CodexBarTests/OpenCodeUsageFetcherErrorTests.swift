@@ -5,19 +5,21 @@ import Testing
 @Suite(.serialized)
 struct OpenCodeUsageFetcherErrorTests {
     private func makeSession() -> URLSession {
-        OpenCodeStubURLProtocol.makeSession()
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [OpenCodeStubURLProtocol.self]
+        return URLSession(configuration: config)
     }
 
     @Test
     func `extracts api error from uppercase HTML title`() async throws {
         defer {
-            OpenCodeStubURLProtocol.reset()
+            OpenCodeStubURLProtocol.handler = nil
         }
 
-        OpenCodeStubURLProtocol.setHandler { request in
+        OpenCodeStubURLProtocol.handler = { request in
             guard let url = request.url else { throw URLError(.badURL) }
             let body = "<html><head><TITLE>403 Forbidden</TITLE></head><body>denied</body></html>"
-            return OpenCodeStubURLProtocol.makeResponse(url: url, body: body, statusCode: 500, contentType: "text/html")
+            return Self.makeResponse(url: url, body: body, statusCode: 500, contentType: "text/html")
         }
 
         do {
@@ -41,17 +43,13 @@ struct OpenCodeUsageFetcherErrorTests {
     @Test
     func `extracts api error from detail field`() async throws {
         defer {
-            OpenCodeStubURLProtocol.reset()
+            OpenCodeStubURLProtocol.handler = nil
         }
 
-        OpenCodeStubURLProtocol.setHandler { request in
+        OpenCodeStubURLProtocol.handler = { request in
             guard let url = request.url else { throw URLError(.badURL) }
             let body = #"{"detail":"Workspace missing"}"#
-            return OpenCodeStubURLProtocol.makeResponse(
-                url: url,
-                body: body,
-                statusCode: 500,
-                contentType: "application/json")
+            return Self.makeResponse(url: url, body: body, statusCode: 500, contentType: "application/json")
         }
 
         do {
@@ -75,14 +73,14 @@ struct OpenCodeUsageFetcherErrorTests {
     @Test
     func `subscription get null skips post and returns graceful error`() async throws {
         defer {
-            OpenCodeStubURLProtocol.reset()
+            OpenCodeStubURLProtocol.handler = nil
         }
 
         var methods: [String] = []
         var urls: [URL] = []
         var queries: [String] = []
         var contentTypes: [String] = []
-        OpenCodeStubURLProtocol.setHandler { request in
+        OpenCodeStubURLProtocol.handler = { request in
             guard let url = request.url else { throw URLError(.badURL) }
             methods.append(request.httpMethod ?? "GET")
             urls.append(url)
@@ -90,19 +88,11 @@ struct OpenCodeUsageFetcherErrorTests {
             contentTypes.append(request.value(forHTTPHeaderField: "Content-Type") ?? "")
 
             if request.httpMethod?.uppercased() == "GET" {
-                return OpenCodeStubURLProtocol.makeResponse(
-                    url: url,
-                    body: "null",
-                    statusCode: 200,
-                    contentType: "application/json")
+                return Self.makeResponse(url: url, body: "null", statusCode: 200, contentType: "application/json")
             }
 
             let body = #"{"status":500,"unhandled":true,"message":"HTTPError"}"#
-            return OpenCodeStubURLProtocol.makeResponse(
-                url: url,
-                body: body,
-                statusCode: 500,
-                contentType: "application/json")
+            return Self.makeResponse(url: url, body: body, statusCode: 500, contentType: "application/json")
         }
 
         do {
@@ -132,11 +122,11 @@ struct OpenCodeUsageFetcherErrorTests {
     @Test
     func `subscription get payload does not fallback to post`() async throws {
         defer {
-            OpenCodeStubURLProtocol.reset()
+            OpenCodeStubURLProtocol.handler = nil
         }
 
         var methods: [String] = []
-        OpenCodeStubURLProtocol.setHandler { request in
+        OpenCodeStubURLProtocol.handler = { request in
             guard let url = request.url else { throw URLError(.badURL) }
             methods.append(request.httpMethod ?? "GET")
 
@@ -146,11 +136,7 @@ struct OpenCodeUsageFetcherErrorTests {
               "weeklyUsage": { "usagePercent": 75, "resetInSec": 7200 }
             }
             """
-            return OpenCodeStubURLProtocol.makeResponse(
-                url: url,
-                body: body,
-                statusCode: 200,
-                contentType: "application/json")
+            return Self.makeResponse(url: url, body: body, statusCode: 200, contentType: "application/json")
         }
 
         let snapshot = try await OpenCodeUsageFetcher.fetchUsage(
@@ -167,11 +153,11 @@ struct OpenCodeUsageFetcherErrorTests {
     @Test
     func `workspace get public actor error is treated as invalid credentials without post retry`() async throws {
         defer {
-            OpenCodeStubURLProtocol.reset()
+            OpenCodeStubURLProtocol.handler = nil
         }
 
         var methods: [String] = []
-        OpenCodeStubURLProtocol.setHandler { request in
+        OpenCodeStubURLProtocol.handler = { request in
             guard let url = request.url else { throw URLError(.badURL) }
             methods.append(request.httpMethod ?? "GET")
             let body = [
@@ -180,7 +166,7 @@ struct OpenCodeUsageFetcherErrorTests {
                 #"{stack:"Error: actor of type \"public\" is not associated with an account"}))"#,
                 #"($R["server-fn:test"]))"#,
             ].joined()
-            return OpenCodeStubURLProtocol.makeResponse(
+            return Self.makeResponse(
                 url: url,
                 body: body,
                 statusCode: 200,
@@ -208,16 +194,16 @@ struct OpenCodeUsageFetcherErrorTests {
     @Test
     func `subscription get missing fields falls back to post`() async throws {
         defer {
-            OpenCodeStubURLProtocol.reset()
+            OpenCodeStubURLProtocol.handler = nil
         }
 
         var methods: [String] = []
-        OpenCodeStubURLProtocol.setHandler { request in
+        OpenCodeStubURLProtocol.handler = { request in
             guard let url = request.url else { throw URLError(.badURL) }
             methods.append(request.httpMethod ?? "GET")
 
             if request.httpMethod?.uppercased() == "GET" {
-                return OpenCodeStubURLProtocol.makeResponse(
+                return Self.makeResponse(
                     url: url,
                     body: #"{"ok":true}"#,
                     statusCode: 200,
@@ -230,7 +216,7 @@ struct OpenCodeUsageFetcherErrorTests {
               "weeklyUsage": { "usagePercent": 44, "resetInSec": 3600 }
             }
             """
-            return OpenCodeStubURLProtocol.makeResponse(
+            return Self.makeResponse(
                 url: url,
                 body: body,
                 statusCode: 200,
@@ -251,11 +237,11 @@ struct OpenCodeUsageFetcherErrorTests {
     @Test
     func `fetcher sends only auth cookie to opencode host`() async throws {
         defer {
-            OpenCodeStubURLProtocol.reset()
+            OpenCodeStubURLProtocol.handler = nil
         }
 
         var observedCookie: String?
-        OpenCodeStubURLProtocol.setHandler { request in
+        OpenCodeStubURLProtocol.handler = { request in
             guard let url = request.url else { throw URLError(.badURL) }
             observedCookie = request.value(forHTTPHeaderField: "Cookie")
 
@@ -265,11 +251,7 @@ struct OpenCodeUsageFetcherErrorTests {
               "weeklyUsage": { "usagePercent": 75, "resetInSec": 7200 }
             }
             """
-            return OpenCodeStubURLProtocol.makeResponse(
-                url: url,
-                body: body,
-                statusCode: 200,
-                contentType: "application/json")
+            return Self.makeResponse(url: url, body: body, statusCode: 200, contentType: "application/json")
         }
 
         _ = try await OpenCodeUsageFetcher.fetchUsage(
@@ -280,10 +262,47 @@ struct OpenCodeUsageFetcherErrorTests {
 
         #expect(observedCookie == "auth=test")
     }
+
+    private static func makeResponse(
+        url: URL,
+        body: String,
+        statusCode: Int,
+        contentType: String) -> (HTTPURLResponse, Data)
+    {
+        let response = HTTPURLResponse(
+            url: url,
+            statusCode: statusCode,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": contentType])!
+        return (response, Data(body.utf8))
+    }
 }
 
-final class OpenCodeStubURLProtocol: TestURLProtocol {
+final class OpenCodeStubURLProtocol: URLProtocol {
+    nonisolated(unsafe) static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+
     override static func canInit(with request: URLRequest) -> Bool {
         request.url?.host == "opencode.ai"
     }
+
+    override static func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        guard let handler = Self.handler else {
+            self.client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+            return
+        }
+        do {
+            let (response, data) = try handler(self.request)
+            self.client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            self.client?.urlProtocol(self, didLoad: data)
+            self.client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            self.client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {}
 }

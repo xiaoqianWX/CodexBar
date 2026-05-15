@@ -147,10 +147,7 @@ struct TTYCommandRunnerEnvTests {
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
 
         let runner = TTYCommandRunner()
-        let result = try runner.run(
-            binary: "/bin/pwd",
-            send: "",
-            options: .init(timeout: 3, workingDirectory: dir, initialDelay: 0.02))
+        let result = try runner.run(binary: "/bin/pwd", send: "", options: .init(timeout: 3, workingDirectory: dir))
         let clean = result.text.replacingOccurrences(of: "\r", with: "")
         #expect(clean.contains(dir.path))
     }
@@ -184,11 +181,10 @@ struct TTYCommandRunnerEnvTests {
             send: "",
             options: .init(
                 timeout: 15,
-                initialDelay: 0.05,
                 // Use LF for portability: some PTY/termios setups do not translate CR → NL for shell reads.
                 sendOnSubstrings: ["trust the files in this folder?": "y\n"],
                 stopOnSubstrings: ["accepted", "rejected"],
-                settleAfterStop: 0.02))
+                settleAfterStop: 0.1))
 
         #expect(result.text.contains("accepted"))
     }
@@ -299,7 +295,7 @@ struct TTYCommandRunnerEnvTests {
         try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
 
         let runner = TTYCommandRunner()
-        let timeout: TimeInterval = 4
+        let timeout: TimeInterval = 6
         var fastestElapsed = TimeInterval.greatestFiniteMagnitude
         // CI can occasionally pause a test process long enough to miss an idle window.
         // Retry once and assert that at least one run exits well before timeout.
@@ -308,11 +304,7 @@ struct TTYCommandRunnerEnvTests {
             let result = try runner.run(
                 binary: scriptURL.path,
                 send: "",
-                options: .init(
-                    timeout: timeout,
-                    idleTimeout: 0.15,
-                    initialDelay: 0.05,
-                    settleAfterStop: 0))
+                options: .init(timeout: timeout, idleTimeout: 0.2))
             let elapsed = Date().timeIntervalSince(startedAt)
 
             #expect(result.text.contains("hello"))

@@ -98,14 +98,15 @@ struct CrofUsageFetcherTests {
     @Test
     func `fetch sends bearer token`() async throws {
         defer {
-            CrofStubURLProtocol.reset()
+            CrofStubURLProtocol.handler = nil
+            CrofStubURLProtocol.requests = []
         }
-
-        CrofStubURLProtocol.setHandler { request in
+        CrofStubURLProtocol.requests = []
+        CrofStubURLProtocol.handler = { request in
             guard let url = request.url else { throw URLError(.badURL) }
             #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer crof-test")
             #expect(request.value(forHTTPHeaderField: "Accept") == "application/json")
-            return CrofStubURLProtocol.makeResponse(
+            return try Self.makeResponse(
                 url: url,
                 body: #"{"credits":10.0,"requests_plan":1000,"usable_requests":998}"#)
         }
@@ -181,12 +182,55 @@ struct CrofUsageFetcherTests {
     }
 
     private static func makeSession() -> URLSession {
-        CrofStubURLProtocol.makeSession()
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [CrofStubURLProtocol.self]
+        return URLSession(configuration: config)
+    }
+
+    private static func makeResponse(
+        url: URL,
+        body: String,
+        statusCode: Int = 200) throws -> (HTTPURLResponse, Data)
+    {
+        guard let response = HTTPURLResponse(
+            url: url,
+            statusCode: statusCode,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "application/json"])
+        else {
+            throw URLError(.badServerResponse)
+        }
+        return (response, Data(body.utf8))
     }
 }
 
-final class CrofStubURLProtocol: TestURLProtocol {
+final class CrofStubURLProtocol: URLProtocol {
+    nonisolated(unsafe) static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+    nonisolated(unsafe) static var requests: [URLRequest] = []
+
     override static func canInit(with request: URLRequest) -> Bool {
         request.url?.host == "crof.ai"
     }
+
+    override static func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        Self.requests.append(self.request)
+        guard let handler = Self.handler else {
+            self.client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+            return
+        }
+        do {
+            let (response, data) = try handler(self.request)
+            self.client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            self.client?.urlProtocol(self, didLoad: data)
+            self.client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            self.client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {}
 }
